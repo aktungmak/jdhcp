@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 	"github.com/pkg/errors"
+	"log"
 	"net"
 	"sync"
-	"time"
 )
 
 // a MsgCallback is provided by the user of this library to
@@ -15,7 +15,7 @@ import (
 // incoming message, and should return a Msg containing the response
 // to be sent. If there is no response needed, the returned Msg
 // should be nil.
-type MsgCallback func(Msg) (*Msg, error)
+type MsgCallback func(Msg) *Msg
 
 // a Server parses incoming DHCP messages and then
 // calls the relevant callbacks with the received information
@@ -27,25 +27,28 @@ type Server struct {
 	port      uint16
 	socket    net.PacketConn
 	listening bool
+	log       *log.Logger
 
 	cbMutex sync.RWMutex
 	msgCb   MsgCallback
 }
 
 // create and initialise a new Server
-func NewServer(ctx context.Context, address net.IP, port uint16) *Server {
+func NewServer(ctx context.Context, lg *log.Logger, address net.IP, port uint16) *Server {
 	ctx, cancel := context.WithCancel(ctx)
 	return &Server{
 		ctx:     ctx,
 		cancel:  cancel,
 		address: address,
 		port:    port,
+		log:     lg,
 	}
 }
 
 // begin listening for incoming DHCP messages
 func (l *Server) Start() error {
-	if l.listening {
+	l.log.Print("starting dhcp server")
+	if l.Listening() {
 		return nil
 	}
 
@@ -56,16 +59,31 @@ func (l *Server) Start() error {
 		return errors.Wrap(err, "open listening socket")
 	}
 
+	l.listening = true
+
+	go l.loop()
+
+	l.log.Print("started dhcp server")
 	return nil
 }
 
 // stop the Server and close down all resources
 func (l *Server) Stop() error {
-	if !l.listening {
+	l.log.Print("stopping dhcp server")
+	if !l.Listening() {
 		return nil
 	}
+
 	l.cancel()
-	return l.socket.Close()
+	err := l.socket.Close()
+	if err != nil {
+		return err
+	}
+
+	l.listening = false
+
+	l.log.Print("stopped dhcp server")
+	return nil
 }
 
 // check whether the Server is currently running
@@ -99,41 +117,39 @@ func (l *Server) loop() {
 				panic("can't read")
 			}
 
-			err = l.handleMsg(buf[:n], addr)
+			go l.handleMsg(buf[:n], addr)
 			if err != nil {
-				print("error handling message from ", addr, err)
 				continue
 			}
-
-			print("successfully handled message from ", addr)
 		}
 	}
 }
 
 // process an incoming DHCP message, dispatch it
 // to the right callback and send a response (if needed)
-func (l *Server) handleMsg(data []byte, from net.Addr) error {
+func (l *Server) handleMsg(data []byte, from net.Addr) {
 	req, err := ParseMsg(data)
 	if err != nil {
-		return errors.Wrapf(err, "parse message")
+		l.log.Printf("error handling message from %s: %s", from, err)
 	}
 
+	var res *Msg
 	l.cbMutex.RLock()
-	res, err := l.msgCb(*req)
+	if l.msgCb != nil {
+		res = l.msgCb(*req)
+	}
 	l.cbMutex.RUnlock()
+
+	if res == nil {
+		return // no response, so we are done
+	}
+
+	payload := res.MarshalBytes()
+	_, err = l.socket.WriteTo(payload, from)
 	if err != nil {
-		return errors.Wrap(err, "execute callback")
+		l.log.Printf("error writing response to %s: %s", from, err)
 	}
+	l.log.Printf("sent response to %s", from)
 
-	// check if there is a response to send
-	if res != nil {
-		payload := res.MarshalBytes()
-		_, err = l.socket.WriteTo(payload, from)
-		if err != nil {
-			return errors.Wrap(err, "write response")
-		}
-		print("sent response to ", from)
-	}
-
-	return nil
+	l.log.Printf("successfully handled message from %s", from)
 }

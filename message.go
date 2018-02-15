@@ -70,7 +70,7 @@ func ParseMsg(data []byte) (*Msg, error) {
 
 func (m *Msg) MarshalBytes() []byte {
 	var b bytes.Buffer
-	b.Grow(364) // TODO check msg size
+	b.Grow(272) // min size
 
 	b.WriteByte(m.Op)
 	b.WriteByte(m.Htype)
@@ -81,17 +81,32 @@ func (m *Msg) MarshalBytes() []byte {
 	binary.Write(&b, binary.BigEndian, m.Secs)
 	binary.Write(&b, binary.BigEndian, m.Flags)
 
-	b.Write(m.Ciaddr)
-	b.Write(m.Yiaddr)
-	b.Write(m.Siaddr)
-	b.Write(m.Giaddr)
+	b.Write(m.Ciaddr.To4())
+	b.Write(m.Yiaddr.To4())
+	b.Write(m.Siaddr.To4())
+	b.Write(m.Giaddr.To4())
 	b.Write(m.Chaddr)
-	b.WriteString(m.Sname)
-	b.WriteString(m.File)
+
+	// pad to 64 bytes
+	sname := make([]byte, 64)
+	copy(sname, m.Sname)
+	b.Write(sname)
+
+	// pad to 128 bytes
+	file := make([]byte, 128)
+	copy(file, m.File)
+	b.Write(file)
 
 	if len(m.Options) > 0 {
 		binary.Write(&b, binary.BigEndian, m.Cookie)
 		b.Write(m.Options.MarshalBytes())
+	}
+
+	// pad out msg to at least 272
+	if b.Len() < 272 {
+		padding := make([]byte, 272)
+		copy(padding, b.Bytes())
+		return padding
 	}
 
 	return b.Bytes()

@@ -1,6 +1,7 @@
 package jdhcp
 
 import (
+	"bytes"
 	"github.com/google/go-cmp/cmp"
 	"net"
 	"testing"
@@ -52,5 +53,13 @@ func TestParseMsg(t *testing.T) {
 }
 
 func TestMsgMarshalBytes(t *testing.T) {
-	t.Fatal("no test case")
+	for i, tc := range messageParseCases {
+		got := tc.asStruct.MarshalBytes()
+
+		t.Logf("len exp: %d len got: %d", len(tc.asBytes), len(got))
+
+		if bytes.Compare(tc.asBytes, got) != 0 {
+			t.Errorf("case %d expected %v got %v", i, tc.asBytes, got)
+		}
+	}
 }
