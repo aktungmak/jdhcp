@@ -2,11 +2,11 @@ package jdhcp
 
 import (
 	"context"
-	"fmt"
 	"github.com/pkg/errors"
 	"log"
 	"net"
 	"sync"
+	"time"
 )
 
 // a MsgCallback is provided by the user of this library to
@@ -21,11 +21,12 @@ type MsgCallback func(Msg) *Msg
 // calls the relevant callbacks with the received information
 // based on the result of the callback, it will send a response
 type Server struct {
-	ctx       context.Context
-	cancel    context.CancelFunc
-	address   net.IP
-	port      uint16
-	socket    net.PacketConn
+	ctx     context.Context
+	cancel  context.CancelFunc
+	address net.IP
+	port    uint16
+	socket  *net.UDPConn
+	// socket    net.PacketConn
 	listening bool
 	log       *log.Logger
 
@@ -53,8 +54,10 @@ func (l *Server) Start() error {
 	}
 
 	var err error
-	l.socket, err = net.ListenPacket("udp4",
-		fmt.Sprintf("%s:%d", l.address, l.port))
+	l.socket, err = net.ListenUDP("udp4",
+		&net.UDPAddr{l.address, int(l.port), ""})
+	// l.socket, err = net.ListenPacket("udp4",
+	// 	fmt.Sprintf("%s:%d", l.address, l.port))
 	if err != nil {
 		return errors.Wrap(err, "open listening socket")
 	}
@@ -109,7 +112,7 @@ func (l *Server) loop() {
 			l.socket.SetReadDeadline(time.Now().Add(time.Second))
 
 			// try to read a packet
-			n, addr, err := l.socket.ReadFrom(buf)
+			n, err := l.socket.Read(buf)
 			if err != nil {
 				if e, ok := err.(net.Error); ok && e.Timeout() {
 					continue // just a timeout
@@ -117,7 +120,7 @@ func (l *Server) loop() {
 				panic("can't read")
 			}
 
-			go l.handleMsg(buf[:n], addr)
+			go l.handleMsg(buf[:n], nil)
 			if err != nil {
 				continue
 			}
