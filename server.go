@@ -120,7 +120,7 @@ func (l *Server) loop() {
 				panic("can't read")
 			}
 
-			go l.handleMsg(buf[:n], nil)
+			go l.handleMsg(buf[:n])
 			if err != nil {
 				continue
 			}
@@ -130,10 +130,10 @@ func (l *Server) loop() {
 
 // process an incoming DHCP message, dispatch it
 // to the right callback and send a response (if needed)
-func (l *Server) handleMsg(data []byte, from net.Addr) {
+func (l *Server) handleMsg(data []byte) {
 	req, err := ParseMsg(data)
 	if err != nil {
-		l.log.Printf("error handling message from %s: %s", from, err)
+		l.log.Printf("error handling message: %s", err)
 	}
 
 	var res *Msg
@@ -148,11 +148,11 @@ func (l *Server) handleMsg(data []byte, from net.Addr) {
 	}
 
 	payload := res.MarshalBytes()
-	_, err = l.socket.WriteTo(payload, from)
+	_, err = l.socket.Write(payload)
 	if err != nil {
-		l.log.Printf("error writing response to %s: %s", from, err)
+		l.log.Printf("error writing response: %s", err)
+		return
 	}
-	l.log.Printf("sent response to %s", from)
 
-	l.log.Printf("successfully handled message from %s", from)
+	l.log.Print("successfully handled message")
 }
