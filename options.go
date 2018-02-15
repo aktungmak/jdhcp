@@ -7,16 +7,16 @@ import (
 	"net"
 )
 
-// Options stored the contents of the options field of a DHCP message
+// Options stores the contents of the options field of a DHCP message
 // as a mapping from OptionCode to the raw bytes of the message.
 // This means that it only supports one occurrence of each option,
 // although the spec is not clear whether that is a problem (other
 // implementations also use a map structure)
 //
-// There are accessor methods defined which parse the raw bytes and
+// There are access methods defined which parse the raw bytes and
 // return a typed interpretation of the value. these should be used
 // unless the actual bytes are needed for some reason.
-
+//
 // it is not safe for concurrent use
 // TODO consider adding a mutex.
 type Options map[OptionCode][]byte
@@ -26,10 +26,9 @@ func ParseOptions(data []byte) (Options, error) {
 
 	buf := bytes.NewBuffer(data)
 
-	var err error
-	var code byte
 	for {
-		code, err = buf.ReadByte()
+		// read code
+		code, err := buf.ReadByte()
 		if err != nil {
 			if err == io.EOF {
 				break
@@ -37,22 +36,24 @@ func ParseOptions(data []byte) (Options, error) {
 			return opts, err
 		}
 
-		switch OptionCode(code) {
-		case OptionPad:
-			// do nothing
-		case OptionEnd:
+		// handle options without length
+		if OptionCode(code) == OptionEnd {
 			break
-		case OptionRequestedIPAddress:
-			buf.ReadByte() // ignore len
-			opts[OptionRequestedIPAddress] = buf.Next(4)
-		case OptionDHCPMessageType:
-			buf.ReadByte() // ignore len
-			opts[OptionDHCPMessageType] = buf.Next(1)
-		default:
-			print("ignoring unknown optioncode ", code)
-			l, _ := buf.ReadByte()
-			buf.Next(int(l))
 		}
+		if OptionCode(code) == OptionPad {
+			continue
+		}
+
+		// read length
+		l, err := buf.ReadByte()
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			return opts, err
+		}
+
+		opts[OptionCode(code)] = buf.Next(int(l))
 	}
 	return opts, nil
 }
@@ -83,6 +84,7 @@ func (o Options) Insert(oc OptionCode, v interface{}) error {
 	return nil
 }
 
+// option 50
 func (o Options) RequestedIPAddress() (net.IP, error) {
 	a, ok := o[OptionRequestedIPAddress]
 	if !ok {
@@ -91,6 +93,7 @@ func (o Options) RequestedIPAddress() (net.IP, error) {
 	return net.IP(a), nil
 }
 
+// option 53
 func (o Options) DHCPMessageType() (MessageType, error) {
 	t, ok := o[OptionDHCPMessageType]
 	if !ok {
@@ -101,4 +104,35 @@ func (o Options) DHCPMessageType() (MessageType, error) {
 	}
 
 	return MessageType(t[0]), nil
+}
+
+// option 55
+func (o Options) ParameterRequestList() ([]OptionCode, error) {
+	pl, ok := o[OptionParameterRequestList]
+	if !ok {
+		return nil, ErrOptionNotPresent
+	}
+
+	ret := make([]OptionCode, 0, len(pl))
+	for _, b := range pl {
+		ret = append(ret, OptionCode(b))
+	}
+
+	return ret, nil
+}
+
+// option 61
+func (o Options) ClientID() (kind byte, id []byte, err error) {
+	ci, ok := o[OptionClientID]
+	if !ok {
+		err = ErrOptionNotPresent
+		return
+	}
+	if len(ci) < 2 {
+		err = ErrShortRead
+		return
+	}
+	kind = ci[0]
+	id = ci[1:]
+	return
 }
