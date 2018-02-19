@@ -9,9 +9,8 @@ import (
 
 // Options stores the contents of the options field of a DHCP message
 // as a mapping from OptionCode to the raw bytes of the message.
-// This means that it only supports one occurrence of each option,
-// although the spec is not clear whether that is a problem (other
-// implementations also use a map structure)
+// This means that it allows only one occurrence of each option,
+// which is specified in chapter 4.1 of RFC2131.
 //
 // There are access methods defined which parse the raw bytes and
 // return a typed interpretation of the value. these should be used
@@ -23,7 +22,6 @@ type Options map[OptionCode][]byte
 
 func ParseOptions(data []byte) (Options, error) {
 	opts := make(Options)
-
 	buf := bytes.NewBuffer(data)
 
 	for {
@@ -59,6 +57,7 @@ func ParseOptions(data []byte) (Options, error) {
 }
 
 // convert to a []byte suitable for sending over the wire
+// sort options before sending so that the result is deterministic
 func (o Options) MarshalBytes() []byte {
 	var b bytes.Buffer
 

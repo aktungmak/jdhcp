@@ -24,7 +24,7 @@ type Server struct {
 	ctx     context.Context
 	cancel  context.CancelFunc
 	address net.IP
-	port    uint16
+	port    int
 	socket  *net.UDPConn
 	// socket    net.PacketConn
 	listening bool
@@ -35,7 +35,7 @@ type Server struct {
 }
 
 // create and initialise a new Server
-func NewServer(ctx context.Context, lg *log.Logger, address net.IP, port uint16) *Server {
+func NewServer(ctx context.Context, lg *log.Logger, address net.IP, port int) *Server {
 	ctx, cancel := context.WithCancel(ctx)
 	return &Server{
 		ctx:     ctx,
@@ -55,7 +55,7 @@ func (l *Server) Start() error {
 
 	var err error
 	l.socket, err = net.ListenUDP("udp4",
-		&net.UDPAddr{l.address, int(l.port), ""})
+		&net.UDPAddr{l.address, l.port, ""})
 	// l.socket, err = net.ListenPacket("udp4",
 	// 	fmt.Sprintf("%s:%d", l.address, l.port))
 	if err != nil {
@@ -102,7 +102,7 @@ func (l *Server) RegisterCallback(cb MsgCallback) {
 }
 
 func (l *Server) loop() {
-	buf := make([]byte, 0, 4096)
+	buf := make([]byte, 4096)
 	for {
 		select {
 		case <-l.ctx.Done():
@@ -112,7 +112,7 @@ func (l *Server) loop() {
 			l.socket.SetReadDeadline(time.Now().Add(time.Second))
 
 			// try to read a packet
-			n, err := l.socket.Read(buf)
+			n, addr, err := l.socket.ReadFromUDP(buf)
 			if err != nil {
 				if e, ok := err.(net.Error); ok && e.Timeout() {
 					continue // just a timeout
@@ -120,7 +120,7 @@ func (l *Server) loop() {
 				panic("can't read")
 			}
 
-			go l.handleMsg(buf[:n])
+			go l.handleMsg(buf[:n], addr)
 			if err != nil {
 				continue
 			}
@@ -130,10 +130,11 @@ func (l *Server) loop() {
 
 // process an incoming DHCP message, dispatch it
 // to the right callback and send a response (if needed)
-func (l *Server) handleMsg(data []byte) {
+func (l *Server) handleMsg(data []byte, from *net.UDPAddr) {
 	req, err := ParseMsg(data)
 	if err != nil {
-		l.log.Printf("error handling message: %s", err)
+		l.log.Printf("error handling message from %s: %s", from, err)
+		return
 	}
 
 	var res *Msg
@@ -148,11 +149,11 @@ func (l *Server) handleMsg(data []byte) {
 	}
 
 	payload := res.MarshalBytes()
-	_, err = l.socket.Write(payload)
+	_, err = l.socket.WriteToUDP(payload, from)
 	if err != nil {
-		l.log.Printf("error writing response: %s", err)
+		l.log.Printf("error writing response to %s: %s", from, err)
 		return
 	}
 
-	l.log.Print("successfully handled message")
+	l.log.Print("successfully handled message from %s", from)
 }
