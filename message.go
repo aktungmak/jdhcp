@@ -3,6 +3,7 @@ package jdhcp
 import (
 	"bytes"
 	"encoding/binary"
+	"fmt"
 	"github.com/pkg/errors"
 	"net"
 )
@@ -22,8 +23,19 @@ type Msg struct {
 	Chaddr net.HardwareAddr
 	Sname  string
 	File   string
-	Cookie uint32
 	Options
+}
+
+// initialise a blank Msg, should be used to ensure correct init
+func NewMsg() *Msg {
+	return &Msg{
+		Ciaddr:  net.IPv4(0, 0, 0, 0),
+		Yiaddr:  net.IPv4(0, 0, 0, 0),
+		Siaddr:  net.IPv4(0, 0, 0, 0),
+		Giaddr:  net.IPv4(0, 0, 0, 0),
+		Chaddr:  net.HardwareAddr([]byte{0, 0, 0, 0, 0, 0}),
+		Options: Options{},
+	}
 }
 
 func ParseMsg(data []byte) (*Msg, error) {
@@ -52,14 +64,13 @@ func ParseMsg(data []byte) (*Msg, error) {
 		return nil, errors.Errorf("unsupported hlen of %d", msg.Hlen)
 	}
 
-	if len(data) < 240 {
-		// no options to process, just return
-		msg.Options = make(Options)
-		return msg, nil
+	cookie := binary.BigEndian.Uint32(data[236:240])
+	if Cookie != cookie {
+		fmt.Printf("data: %v\n", data)
+		return nil, errors.Errorf("incorrect cookie, expected %d got %d", Cookie, cookie)
 	}
 
 	var err error
-	msg.Cookie = binary.BigEndian.Uint32(data[236:240])
 	msg.Options, err = ParseOptions(data[240:])
 	if err != nil {
 		return nil, errors.Wrap(err, "parse options")
@@ -68,6 +79,8 @@ func ParseMsg(data []byte) (*Msg, error) {
 	return msg, nil
 }
 
+// convert a Msg structure to the network representation
+// TODO optimise the method of padding
 func (m *Msg) MarshalBytes() []byte {
 	var b bytes.Buffer
 	b.Grow(272) // min size
@@ -85,7 +98,11 @@ func (m *Msg) MarshalBytes() []byte {
 	b.Write(m.Yiaddr.To4())
 	b.Write(m.Siaddr.To4())
 	b.Write(m.Giaddr.To4())
-	b.Write(m.Chaddr)
+
+	// pad to 16 bytes
+	chaddr := make([]byte, 16)
+	copy(chaddr, m.Chaddr)
+	b.Write(chaddr)
 
 	// pad to 64 bytes
 	sname := make([]byte, 64)
@@ -97,9 +114,14 @@ func (m *Msg) MarshalBytes() []byte {
 	copy(file, m.File)
 	b.Write(file)
 
-	if len(m.Options) > 0 {
-		binary.Write(&b, binary.BigEndian, m.Cookie)
-		b.Write(m.Options.MarshalBytes())
+	binary.Write(&b, binary.BigEndian, Cookie)
+	b.Write(m.Options.MarshalBytes())
+
+	// pad out msg to at least 272
+	if b.Len() < 272 {
+		padding := make([]byte, 272)
+		copy(padding, b.Bytes())
+		return padding
 	}
 
 	// pad out msg to at least 272

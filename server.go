@@ -2,7 +2,6 @@ package jdhcp
 
 import (
 	"context"
-	"fmt"
 	"github.com/pkg/errors"
 	"log"
 	"net"
@@ -22,11 +21,12 @@ type MsgCallback func(Msg) *Msg
 // calls the relevant callbacks with the received information
 // based on the result of the callback, it will send a response
 type Server struct {
-	ctx       context.Context
-	cancel    context.CancelFunc
-	address   net.IP
-	port      uint16
-	socket    net.PacketConn
+	ctx     context.Context
+	cancel  context.CancelFunc
+	address net.IP
+	port    int
+	socket  *net.UDPConn
+	// socket    net.PacketConn
 	listening bool
 	log       *log.Logger
 
@@ -35,7 +35,7 @@ type Server struct {
 }
 
 // create and initialise a new Server
-func NewServer(ctx context.Context, lg *log.Logger, address net.IP, port uint16) *Server {
+func NewServer(ctx context.Context, lg *log.Logger, address net.IP, port int) *Server {
 	ctx, cancel := context.WithCancel(ctx)
 	return &Server{
 		ctx:     ctx,
@@ -54,8 +54,10 @@ func (l *Server) Start() error {
 	}
 
 	var err error
-	l.socket, err = net.ListenPacket("udp4",
-		fmt.Sprintf("%s:%d", l.address, l.port))
+	l.socket, err = net.ListenUDP("udp4",
+		&net.UDPAddr{l.address, l.port, ""})
+	// l.socket, err = net.ListenPacket("udp4",
+	// 	fmt.Sprintf("%s:%d", l.address, l.port))
 	if err != nil {
 		return errors.Wrap(err, "open listening socket")
 	}
@@ -100,7 +102,7 @@ func (l *Server) RegisterCallback(cb MsgCallback) {
 }
 
 func (l *Server) loop() {
-	buf := make([]byte, 0, 4096)
+	buf := make([]byte, 4096)
 	for {
 		select {
 		case <-l.ctx.Done():
@@ -110,7 +112,7 @@ func (l *Server) loop() {
 			l.socket.SetReadDeadline(time.Now().Add(time.Second))
 
 			// try to read a packet
-			n, addr, err := l.socket.ReadFrom(buf)
+			n, addr, err := l.socket.ReadFromUDP(buf)
 			if err != nil {
 				if e, ok := err.(net.Error); ok && e.Timeout() {
 					continue // just a timeout
@@ -128,10 +130,11 @@ func (l *Server) loop() {
 
 // process an incoming DHCP message, dispatch it
 // to the right callback and send a response (if needed)
-func (l *Server) handleMsg(data []byte, from net.Addr) {
+func (l *Server) handleMsg(data []byte, from *net.UDPAddr) {
 	req, err := ParseMsg(data)
 	if err != nil {
 		l.log.Printf("error handling message from %s: %s", from, err)
+		return
 	}
 
 	var res *Msg
@@ -146,11 +149,10 @@ func (l *Server) handleMsg(data []byte, from net.Addr) {
 	}
 
 	payload := res.MarshalBytes()
-	_, err = l.socket.WriteTo(payload, from)
+	_, err = l.socket.WriteToUDP(payload, from)
 	if err != nil {
 		l.log.Printf("error writing response to %s: %s", from, err)
+		return
 	}
 	l.log.Printf("sent response to %s", from)
-
-	l.log.Printf("successfully handled message from %s", from)
 }
