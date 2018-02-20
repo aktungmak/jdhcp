@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"io"
 	"net"
+	"sort"
 )
 
 // Options stores the contents of the options field of a DHCP message
@@ -16,8 +17,7 @@ import (
 // return a typed interpretation of the value. these should be used
 // unless the actual bytes are needed for some reason.
 //
-// it is not safe for concurrent use
-// TODO consider adding a mutex.
+// it is not safe for concurrent access by multiple goroutines
 type Options map[OptionCode][]byte
 
 func ParseOptions(data []byte) (Options, error) {
@@ -59,12 +59,19 @@ func ParseOptions(data []byte) (Options, error) {
 // convert to a []byte suitable for sending over the wire
 // sort options before sending so that the result is deterministic
 func (o Options) MarshalBytes() []byte {
-	var b bytes.Buffer
+	// first get all keys and sort them
+	ks := make([]OptionCode, 0, len(o))
+	for k, _ := range o {
+		ks = append(ks, k)
+	}
+	sort.Slice(ks, func(i, j int) bool { return ks[i] < ks[j] })
 
-	for k, v := range o {
+	// write out the TLVs as bytes
+	var b bytes.Buffer
+	for _, k := range ks {
 		b.WriteByte(byte(k))
-		b.WriteByte(byte(len(v)))
-		b.Write(v)
+		b.WriteByte(byte(len(o[k])))
+		b.Write(o[k])
 	}
 	b.WriteByte(byte(OptionEnd))
 
