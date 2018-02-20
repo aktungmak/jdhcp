@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 	"sort"
+	"time"
 )
 
 // Options stores the contents of the options field of a DHCP message
@@ -90,6 +91,15 @@ func (o Options) Insert(oc OptionCode, v interface{}) error {
 	return nil
 }
 
+// option 1
+func (o Options) SubnetMask() (net.IPMask, error) {
+	a, ok := o[OptionSubnetMask]
+	if !ok {
+		return nil, ErrOptionNotPresent
+	}
+	return net.IPMask(a), nil
+}
+
 // option 50
 func (o Options) RequestedIPAddress() (net.IP, error) {
 	a, ok := o[OptionRequestedIPAddress]
@@ -125,6 +135,26 @@ func (o Options) ParameterRequestList() ([]OptionCode, error) {
 	}
 
 	return ret, nil
+}
+
+// option 58
+func (o Options) RenewalTime() (time.Duration, error) {
+	d, ok := o[OptionRenewalTime]
+	if !ok {
+		return 0, ErrOptionNotPresent
+	}
+
+	return time.Duration(binary.BigEndian.Uint64(d)), nil
+}
+
+// option 59
+func (o Options) RebindingTime() (time.Duration, error) {
+	d, ok := o[OptionRebindingTime]
+	if !ok {
+		return 0, ErrOptionNotPresent
+	}
+
+	return time.Duration(binary.BigEndian.Uint64(d)), nil
 }
 
 // option 61

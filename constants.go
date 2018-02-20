@@ -17,9 +17,12 @@ const (
 	OptionPad OptionCode = 0
 	OptionEnd OptionCode = 255
 
+	OptionSubnetMask           OptionCode = 1
 	OptionRequestedIPAddress   OptionCode = 50
 	OptionDHCPMessageType      OptionCode = 53
 	OptionParameterRequestList OptionCode = 55
+	OptionRenewalTime          OptionCode = 58
+	OptionRebindingTime        OptionCode = 59
 	OptionClientID             OptionCode = 61
 )
 

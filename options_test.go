@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"net"
 	"testing"
+	"time"
 )
 
 var optionsParseCases = []struct {
@@ -61,6 +62,21 @@ func TestOptionsMarshalBytes(t *testing.T) {
 	}
 }
 
+func TestSubnetMask(t *testing.T) {
+	o := make(Options)
+	m1 := net.IPv4Mask(255, 255, 252, 0)
+	o.Insert(OptionSubnetMask, []byte(m1))
+
+	m2, err := o.SubnetMask()
+	if err != nil {
+		t.Fatalf("o.SubnetMask() returned error: %s", err)
+	}
+
+	if m1.String() != m2.String() {
+		t.Fatalf("returned incorrect mask, expected %s got %s", m1, m2)
+	}
+}
+
 func TestRequestedIPAddress(t *testing.T) {
 	o := make(Options)
 	a1 := net.IPv4(192, 168, 1, 1)
@@ -108,6 +124,36 @@ func TestParameterRequestList(t *testing.T) {
 		if v != l2[i] {
 			t.Fatalf("parameter list is different, expected %v got %v", l1, l2)
 		}
+	}
+}
+
+func TestRenewalTime(t *testing.T) {
+	o := make(Options)
+	d1 := time.Hour
+	o.Insert(OptionRenewalTime, d1)
+
+	d2, err := o.RenewalTime()
+	if err != nil {
+		t.Fatalf("o.RenewalTime() returned error: %s", err)
+	}
+
+	if d1 != d2 {
+		t.Fatalf("duration is different, expected %v got %v", d1, d2)
+	}
+}
+
+func TestRebindingTime(t *testing.T) {
+	o := make(Options)
+	d1 := time.Hour
+	o.Insert(OptionRebindingTime, d1)
+
+	d2, err := o.RebindingTime()
+	if err != nil {
+		t.Fatalf("o.RebindingTime() returned error: %s", err)
+	}
+
+	if d1 != d2 {
+		t.Fatalf("duration is different, expected %v got %v", d1, d2)
 	}
 }
 
