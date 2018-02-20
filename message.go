@@ -8,6 +8,7 @@ import (
 	"net"
 )
 
+// Msg represents a DHCP message, as defined in RFC2131 chapter 2
 type Msg struct {
 	Op     byte
 	Htype  byte
@@ -38,6 +39,7 @@ func NewMsg() *Msg {
 	}
 }
 
+// parse a slice of bytes as a DHCP message
 func ParseMsg(data []byte) (*Msg, error) {
 	if len(data) < 236 {
 		return nil, ErrShortRead

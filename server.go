@@ -1,3 +1,8 @@
+// Package jdhcp provides a DHCP server implementation.
+// The package itself only implements the protocol itself,
+// the management of addresses and other configuration
+// parameters is handled by the user of this package through
+// the MsgCallback provided by Server.
 package jdhcp
 
 import (
